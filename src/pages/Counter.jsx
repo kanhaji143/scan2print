@@ -195,6 +195,7 @@ export default function Counter() {
     try {
       await updateDoc(doc(db, 'printRequests', order.id), {
         printStatus: 'COMPLETED',
+        status: 'Printed', // Dashboard sync
       });
     } catch (err) {
       console.error(err);
@@ -289,11 +290,13 @@ export default function Counter() {
         seenRef.current.delete(order.id);
         updateDoc(doc(db, 'printRequests', order.id), {
           printStatus: 'WAITING_CONFIRMATION',
+          status: 'Pending', // Dashboard sync
         }).catch((err) => console.error(err));
       });
       try {
         await updateDoc(doc(db, 'printRequests', order.id), {
           printStatus: 'CANCELLED',
+          status: 'Cancelled', // Dashboard sync
         });
       } catch (err) {
         console.error(err);
@@ -307,6 +310,26 @@ export default function Counter() {
     completeOrder(autoPrintOrder);
   };
 
+  /** Kisi bhi pending order ko queue se bahar (out-of-order) print karo */
+  const printOrderNow = async (order) => {
+    if (!order) return;
+    // Agar koi aur auto-print modal open hai, use defer karo (cancel nahi) — order pending rehta hai
+    if (autoPrintOrder && autoPrintOrder.id !== order.id) {
+      clearCountdown();
+      setAutoPrintOrder(null);
+    }
+    // Cash order: pehle cash confirm karo
+    if (
+      order.paymentMode === 'MANUAL_PAY' &&
+      order.printStatus === 'WAITING_OPERATOR_CONFIRMATION'
+    ) {
+      await confirmCash(order);
+      return;
+    }
+    // Online pending: turant print
+    await completeOrder(order);
+  };
+
   /** Printed/complete order ko wapas pending karo (Revoke — bina refresh) */
   const revertCompleted = async (order) => {
     if (!order) return;
@@ -318,6 +341,7 @@ export default function Counter() {
           ? 'WAITING_CONFIRMATION'
           : 'WAITING_OPERATOR_CONFIRMATION',
         ...(isOnline ? {} : { paymentStatus: 'PENDING' }),
+        status: 'Pending', // Dashboard sync
       });
     } catch (err) {
       console.error(err);
@@ -332,6 +356,7 @@ export default function Counter() {
       await updateDoc(doc(db, 'printRequests', order.id), {
         paymentStatus: 'PAID',
         printStatus: 'COMPLETED',
+        status: 'Printed', // Dashboard sync
       });
     } catch (err) {
       console.error(err);
@@ -348,6 +373,7 @@ export default function Counter() {
       updateDoc(doc(db, 'printRequests', order.id), {
         paymentStatus: prevPayment,
         printStatus: 'WAITING_OPERATOR_CONFIRMATION',
+        status: 'Pending', // Dashboard sync
       }).catch((err) => console.error(err));
     });
   };
@@ -360,6 +386,7 @@ export default function Counter() {
     try {
       await updateDoc(doc(db, 'printRequests', order.id), {
         printStatus: 'COMPLETED',
+        status: 'Printed', // Dashboard sync
       });
     } catch (err) {
       console.error(err);
@@ -368,6 +395,7 @@ export default function Counter() {
       seenRef.current.delete(order.id);
       updateDoc(doc(db, 'printRequests', order.id), {
         printStatus: 'CANCELLED',
+        status: 'Cancelled', // Dashboard sync
       }).catch((err) => console.error(err));
     });
   };
@@ -731,7 +759,8 @@ export default function Counter() {
                 {/* Mistake recovery: bina refresh turant sudharo */}
                 {(req.printStatus === 'WAITING_OPERATOR_CONFIRMATION' ||
                   (req.printStatus === 'CANCELLED' && req.paymentMode === 'RAZORPAY') ||
-                  req.printStatus === 'COMPLETED') && (
+                  req.printStatus === 'COMPLETED' ||
+                  req.printStatus === 'WAITING_CONFIRMATION') && (
                   <div className="queue-item-actions">
                     {req.printStatus === 'WAITING_OPERATOR_CONFIRMATION' && (
                       <button
@@ -740,6 +769,15 @@ export default function Counter() {
                         onClick={() => confirmCash(req)}
                       >
                         ✓ Cash Received - Print
+                      </button>
+                    )}
+                    {req.printStatus === 'WAITING_CONFIRMATION' && (
+                      <button
+                        type="button"
+                        className="queue-action-btn printnow"
+                        onClick={() => printOrderNow(req)}
+                      >
+                        ⚡ Print Now
                       </button>
                     )}
                     {req.printStatus === 'CANCELLED' && req.paymentMode === 'RAZORPAY' && (

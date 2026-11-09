@@ -389,8 +389,8 @@ export default function Upload() {
   };
 
   const handleSubmitDocuments = () => {
-    if (!image1) {
-      setError('First image is required.');
+    if (!image1 && !pdfFile) {
+      setError('Please upload at least one image or a PDF document.');
       return;
     }
     setError('');
@@ -561,7 +561,7 @@ export default function Upload() {
         <form onSubmit={(e) => { e.preventDefault(); handleSubmitDocuments(); }} className="form">
           <ImageSlot
             label="First Image"
-            required
+            required={!pdfFile}
             preview={preview1}
             onPick={(f) => pick(1, f)}
             onRemove={() => remove(1)}

@@ -1414,10 +1414,10 @@ p {
   box-shadow: 0 2px 10px rgba(16, 185, 129, 0.4);
 }
 
-.queue-action-btn.reprint {
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: #16233b;
-  box-shadow: 0 2px 10px rgba(245, 158, 11, 0.4);
+.queue-action-btn.printnow {
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(59, 130, 246, 0.4);
 }
 
 .status-badge {

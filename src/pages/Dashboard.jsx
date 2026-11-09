@@ -89,9 +89,17 @@ export default function Dashboard() {
     await signOut(auth);
   };
 
+  /** Status buttons — legacy `status` ke saath-saath Counter wale real fields bhi update karo,
+   *  warna Counter page status change ko ignore kar deta hai. */
+  const STATUS_FIELD_MAP = {
+    Pending: { status: 'Pending', paymentStatus: 'PENDING' },
+    Paid: { status: 'Paid', paymentStatus: 'PAID' },
+    Printed: { status: 'Printed', printStatus: 'COMPLETED' },
+  };
+
   const setStatus = async (id, status) => {
     try {
-      await updateDoc(doc(db, 'printRequests', id), { status });
+      await updateDoc(doc(db, 'printRequests', id), STATUS_FIELD_MAP[status] || { status });
     } catch (err) {
       console.error(err);
     }
