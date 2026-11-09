@@ -15,6 +15,7 @@ import {
 } from 'firebase/auth';
 import { db, auth } from '../lib/firebase';
 import QRCode from 'qrcode';
+import { io } from 'socket.io-client';
 import {
   playOrderChime,
   requestNotificationPermission,
@@ -55,9 +56,13 @@ export default function Counter() {
   const [printerName, setPrinterName] = useState('Epson L3250');
   const [countdownSeconds, setCountdownSeconds] = useState(5);
   const [qrDataUrl, setQrDataUrl] = useState('');
+  const [serverConnected, setServerConnected] = useState(false);
+  const [printToast, setPrintToast] = useState(null);
 
   const seenRef = useRef(new Set());
   const countdownTimerRef = useRef(null);
+  const socketRef = useRef(null);
+  const jobsRef = useRef(new Map()); // jobId -> order (print fail par file kholne ke liye)
 
   // Auth state listener
   useEffect(() => {
@@ -74,6 +79,69 @@ export default function Counter() {
       .then(setQrDataUrl)
       .catch(() => setQrDataUrl(''));
   }, []);
+
+  // Connect to the local print server (if running on the shop PC)
+  useEffect(() => {
+    const socket = io('http://localhost:3000', {
+      reconnectionAttempts: 5,
+      timeout: 4000,
+    });
+    socketRef.current = socket;
+
+    socket.on('connect', () => setServerConnected(true));
+    socket.on('disconnect', () => setServerConnected(false));
+    socket.on('connect_error', () => setServerConnected(false));
+
+    socket.on('print-status', (data) => {
+      setPrintToast({ ...data, at: Date.now() });
+      // Print fail hua to order ki file khol do (manual print fallback)
+      if (data && !data.ok && data.jobId) {
+        const order = jobsRef.current.get(data.jobId);
+        if (order) openDocumentFor(order);
+        jobsRef.current.delete(data.jobId);
+      }
+    });
+
+    return () => {
+      socket.close();
+      socketRef.current = null;
+    };
+  }, []);
+
+  // Auto-hide print toast
+  useEffect(() => {
+    if (!printToast) return;
+    const t = setTimeout(() => setPrintToast(null), 8000);
+    return () => clearTimeout(t);
+  }, [printToast]);
+
+  /** Send print job to local server; returns false if server offline */
+  const sendPrintJob = (order) => {
+    const socket = socketRef.current;
+    if (!socket || !socket.connected) return false;
+
+    const file =
+      order?.pdfFile?.name
+        ? order.pdfFile
+        : order?.image1?.name
+          ? order.image1
+          : order?.image2;
+    const url = file?.downloadUrl || file?.previewUrl;
+    if (!url) return false;
+
+    const isPdf = /\.pdf$/i.test(file?.name || '') || Boolean(order?.pdfFile?.name);
+    jobsRef.current.set(order.id, order);
+    socket.emit('print-job', {
+      jobId: order.id,
+      token: order.token || '',
+      url,
+      fileName: file?.name || 'document',
+      type: isPdf ? 'pdf' : 'image',
+      copies: order.copies || 1,
+      printer: printerName,
+    });
+    return true;
+  };
 
   const clearCountdown = () => {
     if (countdownTimerRef.current) {
@@ -103,7 +171,9 @@ export default function Counter() {
 
   const completeOrder = async (order) => {
     if (!order) return;
-    openDocumentFor(order);
+    // Pehle local print server try karo (automatic printing)
+    const sent = sendPrintJob(order);
+    if (!sent) openDocumentFor(order); // fallback: file khol do, operator Ctrl+P kare
     try {
       await updateDoc(doc(db, 'printRequests', order.id), {
         printStatus: 'COMPLETED',
@@ -221,7 +291,9 @@ export default function Counter() {
       } catch (err) {
         console.error(err);
       }
-      openDocumentFor(manualOrder);
+      // Pehle local print server try karo (automatic printing)
+      const sent = sendPrintJob(manualOrder);
+      if (!sent) openDocumentFor(manualOrder);
     }
     stopCashAlertLoop();
     stopTitleBlink();
@@ -366,6 +438,9 @@ export default function Counter() {
           <span className="counter-subtitle">Live Print Dashboard</span>
         </div>
         <div className="counter-header-actions">
+          <span className={`server-badge ${serverConnected ? 'on' : 'off'}`}>
+            Server: {serverConnected ? 'On' : 'Off'}
+          </span>
           <span className="printer-badge">Printer: {printerName}</span>
           <button
             type="button"
@@ -706,8 +781,20 @@ export default function Counter() {
                 <span className="control-value active">Connected</span>
               </div>
               <div className="control-item">
+                <span className="control-label">Print Server</span>
+                <span
+                  className={`control-value ${serverConnected ? 'active' : 'inactive'}`}
+                >
+                  {serverConnected ? 'Connected' : 'Offline'}
+                </span>
+              </div>
+              <div className="control-item">
                 <span className="control-label">Printer</span>
                 <span className="control-value">{printerName}</span>
+              </div>
+              <div className="control-item">
+                <span className="control-label">Auto-Print</span>
+                <span className="control-value">{countdownSeconds}s countdown</span>
               </div>
             </div>
             <div className="control-actions">
@@ -724,6 +811,20 @@ export default function Counter() {
               <button
                 type="button"
                 className="action-btn"
+                onClick={() => {
+                  if (socketRef.current?.connected) {
+                    setPrintToast({ ok: true, message: 'Print server already connected ✓', at: Date.now() });
+                  } else {
+                    socketRef.current?.connect();
+                    setPrintToast({ ok: false, message: 'Reconnecting to print server (port 3000)...', at: Date.now() });
+                  }
+                }}
+              >
+                {serverConnected ? 'Server: On' : 'Reconnect Server'}
+              </button>
+              <button
+                type="button"
+                className="action-btn"
                 onClick={() => window.location.reload()}
               >
                 Refresh
@@ -731,6 +832,16 @@ export default function Counter() {
             </div>
             <p className="control-upload-url">Upload URL: {window.location.origin}</p>
           </div>
+        </div>
+      )}
+
+      {/* Print status toast */}
+      {printToast && (
+        <div className={`print-toast ${printToast.ok ? 'success' : 'error'}`}>
+          <span>{printToast.message}</span>
+          <button type="button" className="toast-close" onClick={() => setPrintToast(null)}>
+            ×
+          </button>
         </div>
       )}
     </div>
