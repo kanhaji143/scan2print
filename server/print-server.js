@@ -51,6 +51,7 @@ httpServer.on('request', (req, res) => {
         printer: getDefaultPrinterName(),
         os: os.platform(),
         sumatra: findSumatra() ? 'found' : 'missing (PDF auto-print off)',
+        lanIP: getLanIP(),
         uptime: Math.round(process.uptime()),
       })
     );
@@ -80,6 +81,51 @@ function findSumatra() {
 function getDefaultPrinterName() {
   // Windows: default printer read via wmic is slow, so keep it simple.
   return process.env.DEFAULT_PRINTER || 'Windows Default Printer';
+}
+
+/** Is PC par installed printers ki list (PowerShell Get-Printer) */
+function listPrinters() {
+  return new Promise((resolve) => {
+    const ps = 'Get-Printer | ForEach-Object { "{0}|{1}" -f $_.Name, $_.Default }';
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', ps],
+      { windowsHide: true, timeout: 20000 },
+      (err, stdout) => {
+        if (err) {
+          resolve({ ok: false, printers: [], defaultPrinter: '', error: err.message });
+          return;
+        }
+        const printers = String(stdout || '')
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .map((line) => {
+            const idx = line.lastIndexOf('|');
+            const name = idx === -1 ? line : line.slice(0, idx);
+            const isDefault = idx === -1 ? false : line.slice(idx + 1).trim() === 'True';
+            return { name, isDefault };
+          });
+        resolve({
+          ok: true,
+          printers,
+          defaultPrinter: printers.find((p) => p.isDefault)?.name || '',
+          lanIP: getLanIP(),
+        });
+      }
+    );
+  });
+}
+
+/** Is PC ka LAN IP (mobile remote ke liye) */
+function getLanIP() {
+  const nets = os.networkInterfaces();
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name] || []) {
+      if (net.family === 'IPv4' && !net.internal) return net.address;
+    }
+  }
+  return 'localhost';
 }
 
 /** Download a file to temp dir, returns local path */
@@ -121,10 +167,31 @@ async function downloadFile(url, suggestedName) {
   return file;
 }
 
-/** Print an image using Windows Shell "print" verb (default printer) */
+/** Print an image — SumatraPDF ho to selected printer par, warna default printer (Shell verb) */
 function printImage(file, printerName) {
+  const sumatra = findSumatra();
+  if (sumatra) {
+    // SumatraPDF images (JPG/PNG/etc.) bhi print karta hai aur -print-to se
+    // koi bhi specific printer choose kar sakta hai.
+    return new Promise((resolve, reject) => {
+      const args =
+        printerName && printerName !== 'Windows Default Printer' && printerName !== 'Default Printer'
+          ? ['-print-to', printerName]
+          : ['-print-to-default'];
+      execFile(
+        sumatra,
+        [...args, '-silent', '-exit-when-done', file],
+        { windowsHide: true, timeout: 90000 },
+        (err, _stdout, stderr) => {
+          if (err) reject(new Error(stderr || err.message));
+          else resolve();
+        }
+      );
+    });
+  }
+
+  // Fallback: Shell "print" verb — ye sirf DEFAULT printer par jaata hai.
   return new Promise((resolve, reject) => {
-    // printerName currently ignored: Shell verb prints to default printer.
     const ps = [
       "$ErrorActionPreference = 'Stop'",
       `$file = '${file.replace(/'/g, "''")}'`,
@@ -155,11 +222,24 @@ function printPdf(file, printerName) {
       )
     );
   }
+  // Printer name validate karo — installed nahi hai to default printer use karo
+  let resolvedPrinter = printerName;
+  const installed = listPrinters();
+  if (installed.ok && installed.printers.length) {
+    const match = installed.printers.find((p) => p.name === printerName);
+    if (!match) {
+      resolvedPrinter = installed.defaultPrinter || '';
+    }
+  }
+  const useDefault =
+    !resolvedPrinter ||
+    resolvedPrinter === 'Windows Default Printer' ||
+    resolvedPrinter === 'Default Printer' ||
+    resolvedPrinter === 'Default';
+  const args = useDefault
+    ? ['-print-to-default']
+    : ['-print-to', resolvedPrinter];
   return new Promise((resolve, reject) => {
-    const args =
-      printerName && printerName !== 'Windows Default Printer' && printerName !== 'Default Printer'
-        ? ['-print-to', printerName]
-        : ['-print-to-default'];
     execFile(
       sumatra,
       [...args, '-silent', '-exit-when-done', file],
@@ -241,13 +321,21 @@ io.on('connection', (socket) => {
   socket.emit('hello', {
     printer: getDefaultPrinterName(),
     sumatra: findSumatra() ? 'found' : 'missing',
-    version: '1.0.0',
+    lanIP: getLanIP(),
+    version: '1.1.0',
   });
 
   socket.on('get-status', (ack) => {
     if (typeof ack === 'function') {
       ack({ ok: true, printer: getDefaultPrinterName(), sumatra: findSumatra() ? 'found' : 'missing' });
     }
+  });
+
+  // Installed printers ki list bhejo (Counter ke dropdown ke liye)
+  socket.on('list-printers', async (ack) => {
+    const result = await listPrinters();
+    if (typeof ack === 'function') ack(result);
+    else socket.emit('printers', result);
   });
 
   socket.on('print-job', (job) => {

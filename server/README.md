@@ -55,8 +55,15 @@ aur counter se order bhejte waqt `dryRun: true` bhejo (code mein already support
 
 ## Printer badalna
 
-Windows Settings → Printers → jo printer default hai wahi use hoga.
-Specific printer ke liye `DEFAULT_PRINTER` environment variable set karo:
-```
-set DEFAULT_PRINTER=Epson L3250 && node server/print-server.js
-```
+Counter page → **Settings** → "सक्रिय प्रिंटर चुनें" dropdown se installed printers
+mein se select karo (list print server se aati hai). Selected printer localStorage
+mein save hota hai — har print usi printer par jayega (SumatraPDF installed hona
+chahiye, warna sirf default printer par).
+
+## Remote Control Center (Counter → Control button)
+
+1. **Dukandar Mobile Remote** — counter ka URL + QR scan karke mobile par kholo
+   (shop WiFi). Settings mein print server ka LAN IP daalo.
+2. **Customer Upload Link** — copy / WhatsApp share / A4 QR poster print.
+3. **Hardware Test** — test sound, test print, server reconnect, fullscreen.
+

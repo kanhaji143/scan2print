@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ad - Get Your First Website</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100vw; height: 100vh; overflow: hidden; }
+  body {
+    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+  .blob { position: absolute; border-radius: 50%; filter: blur(60px); opacity: 0.5; }
+  .blob1 { width: 40vw; height: 40vw; background: #ff6b6b; top: -12vw; left: -12vw; }
+  .blob2 { width: 45vw; height: 45vw; background: #4ecdc4; bottom: -18vw; right: -14vw; }
+  .blob3 { width: 30vw; height: 30vw; background: #ffe66d; top: 18vh; right: 8vw; opacity: 0.3; }
+  .container {
+    position: relative;
+    z-index: 2;
+    text-align: center;
+    padding: 4vh 6vw;
+    max-width: 92vw;
+  }
+  .badge {
+    display: inline-block;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.25);
+    padding: 1vh 2.5vw;
+    border-radius: 999px;
+    font-size: 1.6vw;
+    letter-spacing: 0.3vw;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-bottom: 3vh;
+    backdrop-filter: blur(10px);
+  }
+  .headline {
+    font-size: 7.5vw;
+    font-weight: 800;
+    line-height: 1.05;
+    margin-bottom: 1.5vh;
+    background: linear-gradient(90deg, #ffffff 0%, #ffe66d 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .sub {
+    font-size: 3vw;
+    font-weight: 400;
+    opacity: 0.9;
+    margin-bottom: 4vh;
+  }
+  .price {
+    font-size: 10vw;
+    font-weight: 900;
+    color: #ffe66d;
+    text-shadow: 0 0 3vw rgba(255,230,109,0.4);
+    line-height: 1;
+    margin-bottom: 1vh;
+  }
+  .price small {
+    font-size: 4vw;
+    font-weight: 700;
+    vertical-align: top;
+    margin-right: 0.8vw;
+  }
+  .cta {
+    margin-top: 5vh;
+    display: inline-block;
+    background: linear-gradient(90deg, #ff6b6b 0%, #f06595 100%);
+    color: #fff;
+    font-size: 2.6vw;
+    font-weight: 700;
+    padding: 1.8vh 5vw;
+    border-radius: 1.2vw;
+    box-shadow: 0 1.5vw 4vw rgba(255,107,107,0.4);
+    letter-spacing: 0.1vw;
+  }
+  .footer {
+    position: absolute;
+    bottom: 2.5vh;
+    left: 0; right: 0;
+    text-align: center;
+    font-size: 1.5vw;
+    opacity: 0.6;
+    letter-spacing: 0.15vw;
+  }
+  .features {
+    display: flex;
+    justify-content: center;
+    gap: 4vw;
+    margin-top: 3vh;
+    font-size: 1.9vw;
+    opacity: 0.85;
+    flex-wrap: wrap;
+  }
+  .features span { display: flex; align-items: center; gap: 0.6vw; }
+  .features span::before { content: "✓"; color: #4ecdc4; font-weight: 900; font-size: 2.2vw; }
+</style>
+</head>
+<body>
+  <div class="blob blob1"></div>
+  <div class="blob blob2"></div>
+  <div class="blob blob3"></div>
+  <div class="container">
+    <div class="badge">Limited Time Offer</div>
+    <div class="headline">Get Your First<br>Website</div>
+    <div class="sub">Professional. Fast. Affordable.</div>
+    <div class="price"><small>Rs.</small>10,000</div>
+    <div class="features">
+      <span>Responsive Design</span>
+      <span>SEO Ready</span>
+      <span>Fast Delivery</span>
+    </div>
+    <div class="cta">Start Now — Contact Us</div>
+  </div>
+  <div class="footer">www.apnaitonline.com  •  +91 8504985149</div>
+</body>
+</html>

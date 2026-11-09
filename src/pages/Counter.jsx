@@ -55,9 +55,20 @@ export default function Counter() {
   const [showControl, setShowControl] = useState(false);
   const [ledgerData, setLedgerData] = useState(null);
   const [notificationPermission, setNotificationPermission] = useState('default');
-  const [printerName, setPrinterName] = useState('Epson L3250');
+  const [printerName, setPrinterName] = useState(() => {
+    try { return localStorage.getItem('qrPrinterName') || 'Windows Default Printer'; } catch { return 'Windows Default Printer'; }
+  });
+  const [printerList, setPrinterList] = useState([]); // [{ name, isDefault }]
+  const [printersLoading, setPrintersLoading] = useState(false);
+  const [lanIP, setLanIP] = useState('');
+
+  // Persist printer selection to localStorage
+  useEffect(() => {
+    try { localStorage.setItem('qrPrinterName', printerName); } catch {}
+  }, [printerName]);
   const [countdownSeconds, setCountdownSeconds] = useState(5);
   const [qrDataUrl, setQrDataUrl] = useState('');
+  const [counterQrUrl, setCounterQrUrl] = useState('');
   const [serverConnected, setServerConnected] = useState(false);
   const [printToast, setPrintToast] = useState(null);
   // Undo/Revoke system — galti bina refresh ke sudharo
@@ -90,7 +101,94 @@ export default function Counter() {
     QRCode.toDataURL(window.location.origin + '/', { width: 400, margin: 2 })
       .then(setQrDataUrl)
       .catch(() => setQrDataUrl(''));
+    // Mobile remote QR — counter page ka URL (shop WiFi par mobile se chalao)
+    QRCode.toDataURL(window.location.origin + '/counter', { width: 300, margin: 2 })
+      .then(setCounterQrUrl)
+      .catch(() => setCounterQrUrl(''));
   }, []);
+
+  /** Print server se installed printers ki list mango (dropdown ke liye) */
+  const fetchPrinters = () => {
+    const socket = socketRef.current;
+    if (!socket || !socket.connected) return;
+    setPrintersLoading(true);
+    socket.emit('list-printers', (res) => {
+      setPrintersLoading(false);
+      if (res?.ok && Array.isArray(res.printers) && res.printers.length) {
+        setPrinterList(res.printers);
+        if (res.lanIP) setLanIP(res.lanIP);
+        // Saved printer list me na ho to default printer auto-select karo
+        setPrinterName((prev) => {
+          if (res.printers.some((p) => p.name === prev)) return prev;
+          const def = res.printers.find((p) => p.isDefault);
+          return def?.name || prev;
+        });
+      }
+    });
+  };
+
+  /** Clipboard copy + toast feedback */
+  const copyToClipboard = async (text, label) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setPrintToast({ ok: true, message: `${label} copy ho gaya ✓`, at: Date.now() });
+    } catch {
+      setPrintToast({ ok: false, message: 'Copy nahi hua — link manually select karke copy karo.', at: Date.now() });
+    }
+  };
+
+  /** Customer QR poster (A4 standee) — naye window me kholo, wahan se print */
+  const openPoster = () => {
+    if (!qrDataUrl) return;
+    const w = window.open('', '_blank');
+    if (!w) {
+      setPrintToast({ ok: false, message: 'Popup blocked hai — browser me popups allow karo.', at: Date.now() });
+      return;
+    }
+    const origin = window.location.origin;
+    w.document.write(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Scan to Print Poster</title>
+<style>
+  @page { size: A4; margin: 0; }
+  body { margin: 0; font-family: 'Segoe UI', Arial, sans-serif; background: #f1f5f9; }
+  .poster { width: 794px; min-height: 1123px; margin: 0 auto; background: linear-gradient(160deg,#0f0c29,#302b63); color: #fff; text-align: center; padding: 60px 40px; box-sizing: border-box; }
+  h1 { font-size: 44px; margin: 0 0 8px; }
+  h2 { font-size: 24px; font-weight: 400; opacity: .85; margin: 0 0 30px; }
+  .qr-card { background: #fff; border-radius: 24px; display: inline-block; padding: 28px; }
+  .qr-card img { width: 420px; height: 420px; display: block; }
+  .steps { margin: 30px auto 0; font-size: 22px; line-height: 1.8; opacity: .95; }
+  .rates { margin-top: 28px; display: flex; gap: 20px; justify-content: center; }
+  .rate { background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.3); border-radius: 14px; padding: 14px 26px; font-size: 22px; }
+  .url { margin-top: 26px; font-size: 18px; opacity: .8; word-break: break-all; }
+  @media print { body { background: #0f0c29; } .no-print { display: none; } }
+</style></head>
+<body>
+  <div class="poster">
+    <h1>Scan to Print</h1>
+    <h2>अपना दस्तावेज़ खुद अपलोड करें — तुरंत प्रिंट पाएं</h2>
+    <div class="qr-card"><img src="${qrDataUrl}" alt="QR" /></div>
+    <div class="steps"><strong>स्टेप्स:</strong><br/>1. QR स्कैन करें ➔ 2. डॉक्यूमेंट अपलोड करें ➔ 3. प्रिंट पाएं</div>
+    <div class="rates">
+      <div class="rate">⚫⚪ B&amp;W: ₹10/पेज</div>
+      <div class="rate">🌈 कलर: ₹15/पेज</div>
+    </div>
+    <div class="url">${origin}</div>
+  </div>
+  <div class="no-print" style="text-align:center;padding:20px;">
+    <button onclick="window.print()" style="font-size:20px;padding:12px 30px;cursor:pointer;">🖨️ यह पोस्टर प्रिंट करें</button>
+  </div>
+</body></html>`);
+    w.document.close();
+  };
+
+  /** Fullscreen toggle */
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.();
+    } else {
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    }
+  };
 
   // Connect to the local print server (if running on the shop PC)
   useEffect(() => {
@@ -100,9 +198,18 @@ export default function Counter() {
     });
     socketRef.current = socket;
 
-    socket.on('connect', () => setServerConnected(true));
+    socket.on('connect', () => {
+      setServerConnected(true);
+      // Server milte hi installed printers ki list maango (dropdown ke liye)
+      fetchPrinters();
+    });
     socket.on('disconnect', () => setServerConnected(false));
     socket.on('connect_error', () => setServerConnected(false));
+
+    socket.on('hello', (info) => {
+      // Sirf LAN IP update karo — printer selection operator ke paas rehne do
+      if (info?.lanIP) setLanIP(info.lanIP);
+    });
 
     socket.on('print-status', (data) => {
       setPrintToast({ ...data, at: Date.now() });
@@ -869,6 +976,10 @@ export default function Counter() {
                   {formatINR(autoPrintOrder.totalAmount || 0)}
                 </strong>
               </div>
+              <div className="detail-row">
+                <span>Printer:</span>
+                <strong>{printerName}</strong>
+              </div>
             </div>
             <div className="countdown-display">
               <span className="countdown-number">{countdown}</span>
@@ -1025,14 +1136,46 @@ export default function Counter() {
               </button>
             </div>
             <div className="setting-group">
-              <label className="setting-label">सक्रिय प्रिंटर चुनें (उदा. Epson L3250):</label>
-              <input
-                type="text"
-                className="input"
-                value={printerName}
-                onChange={(e) => setPrinterName(e.target.value)}
-                placeholder="Printer name"
-              />
+              <label className="setting-label">
+                सक्रिय प्रिंटर चुनें (इस PC पर इंस्टॉल्ड):
+                {printersLoading && <span className="setting-hint"> लोड हो रहा है...</span>}
+              </label>
+              {printerList.length > 0 ? (
+                <div className="printer-select-row">
+                  <select
+                    className="input"
+                    value={printerName}
+                    onChange={(e) => setPrinterName(e.target.value)}
+                  >
+                    {printerList.map((p) => (
+                      <option key={p.name} value={p.name}>
+                        {p.name}{p.isDefault ? ' (Default)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="counter-btn"
+                    title="Printer list refresh karo"
+                    onClick={fetchPrinters}
+                  >
+                    ↻
+                  </button>
+                </div>
+              ) : (
+                <input
+                  type="text"
+                  className="input"
+                  value={printerName}
+                  onChange={(e) => setPrinterName(e.target.value)}
+                  placeholder="Printer name (उदा. Epson L3250)"
+                />
+              )}
+              {!serverConnected && (
+                <p className="setting-hint">
+                  Print server offline hai — list ke liye server start karo, abhi manually naam daal sakte ho.
+                </p>
+              )}
             </div>
             <div className="setting-group">
               <label className="setting-label">ऑटो-प्रिंट काउंटडाउन समय (सेकंड):</label>
@@ -1080,6 +1223,7 @@ export default function Counter() {
                 className="submit-btn"
                 onClick={() => {
                   setPrinterName(printerName);
+                  try { localStorage.setItem('qrPrinterName', printerName); } catch {}
                   setServerHost(serverHostInput.trim() || 'localhost');
                   try { localStorage.setItem('qrPrintServerHost', serverHostInput.trim() || 'localhost'); } catch {}
                   setShowSettings(false);
@@ -1092,12 +1236,12 @@ export default function Counter() {
         </div>
       )}
 
-      {/* Control Modal */}
+      {/* Control Modal — Remote Control Center */}
       {showControl && (
         <div className="modal-backdrop" onClick={() => setShowControl(false)}>
           <div className="modal control-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Control Center</h3>
+              <h3>सॉफ्टवेयर व रिमोट कंट्रोल सेंटर</h3>
               <button type="button" className="modal-close" onClick={() => setShowControl(false)}>
                 ×
               </button>
@@ -1116,7 +1260,7 @@ export default function Counter() {
                 </span>
               </div>
               <div className="control-item">
-                <span className="control-label">Printer</span>
+                <span className="control-label">सक्रिय प्रिंटर</span>
                 <span className="control-value">{printerName}</span>
               </div>
               <div className="control-item">
@@ -1124,41 +1268,129 @@ export default function Counter() {
                 <span className="control-value">{countdownSeconds}s countdown</span>
               </div>
             </div>
-            <div className="control-actions">
-              <button
-                type="button"
-                className="action-btn"
-                onClick={() => {
-                  playOrderChime();
-                  sendDesktopNotification('Test', 'Sound test successful!', 'test-sound');
-                }}
-              >
-                Test Sound
-              </button>
-              <button type="button" className="action-btn" onClick={handleTestPrint}>
-                Test Print
-              </button>
-              <button
-                type="button"
-                className="action-btn"
-                onClick={() => {
-                  if (socketRef.current?.connected) {
-                    setPrintToast({ ok: true, message: 'Print server already connected ✓', at: Date.now() });
-                  } else {
-                    socketRef.current?.connect();
-                    setPrintToast({ ok: false, message: 'Reconnecting to print server (port 3000)...', at: Date.now() });
+
+            {/* 1. Dukandar Mobile Remote (Shop WiFi) */}
+            <div className="remote-section">
+              <h4 className="remote-title">📱 1. दुकानदार मोबाइल रिमोट (Shop WiFi)</h4>
+              <p className="remote-desc">
+                दुकान में कहीं भी रहकर अपने मोबाइल पर काउंटर खोलें — QR स्कैन करो या लिंक कॉपी करो:
+              </p>
+              <div className="remote-qr-row">
+                {counterQrUrl ? (
+                  <img src={counterQrUrl} alt="Counter QR" className="remote-qr" />
+                ) : (
+                  <div className="remote-qr remote-qr-placeholder">QR...</div>
+                )}
+                <div className="remote-url-col">
+                  <div className="remote-url-row">
+                    <input
+                      type="text"
+                      className="input"
+                      readOnly
+                      value={`${window.location.origin}/counter`}
+                      onFocus={(e) => e.target.select()}
+                    />
+                    <button
+                      type="button"
+                      className="counter-btn"
+                      onClick={() => copyToClipboard(`${window.location.origin}/counter`, 'Counter link')}
+                    >
+                      कॉपी
+                    </button>
+                  </div>
+                  <p className="setting-hint">
+                    मोबाइल पर print server connect करने के लिए Settings में यह IP डालें: <strong>{lanIP || serverHost}</strong>
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. Customer online upload link */}
+            <div className="remote-section">
+              <h4 className="remote-title">🌐 2. ग्राहक 4G/5G ऑनलाइन अपलोड लिंक</h4>
+              <p className="remote-desc">
+                ग्राहक अपने मोबाइल से इस लिंक पर फाइल भेजेंगे और UPI से भुगतान करेंगे:
+              </p>
+              <div className="remote-url-row">
+                <input
+                  type="text"
+                  className="input"
+                  readOnly
+                  value={window.location.origin}
+                  onFocus={(e) => e.target.select()}
+                />
+                <button
+                  type="button"
+                  className="counter-btn"
+                  onClick={() => copyToClipboard(window.location.origin, 'Upload link')}
+                >
+                  कॉपी
+                </button>
+              </div>
+              <div className="remote-btn-row">
+                <button
+                  type="button"
+                  className="counter-btn wa"
+                  onClick={() =>
+                    window.open(
+                      `https://wa.me/?text=${encodeURIComponent(
+                        `अपने दस्तावेज़ यहाँ से प्रिंट करें: ${window.location.origin}`
+                      )}`,
+                      '_blank',
+                      'noopener'
+                    )
                   }
-                }}
-              >
-                {serverConnected ? 'Server: On' : 'Reconnect Server'}
-              </button>
-              <button
-                type="button"
-                className="action-btn"
-                onClick={() => window.location.reload()}
-              >
-                Refresh
-              </button>
+                >
+                  WhatsApp पर भेजें
+                </button>
+                <button type="button" className="counter-btn" onClick={openPoster}>
+                  बड़ा QR पोस्टर प्रिंट करें (A4 Standee)
+                </button>
+              </div>
+            </div>
+
+            {/* 3. Hardware & sound test */}
+            <div className="remote-section">
+              <h4 className="remote-title">🛠️ 3. हार्डवेयर और साउंड टेस्ट</h4>
+              <div className="control-actions">
+                <button
+                  type="button"
+                  className="action-btn"
+                  onClick={() => {
+                    playOrderChime();
+                    sendDesktopNotification('Test', 'Sound test successful!', 'test-sound');
+                  }}
+                >
+                  🔔 Test Sound
+                </button>
+                <button type="button" className="action-btn" onClick={handleTestPrint}>
+                  🖨️ Test Print
+                </button>
+                <button
+                  type="button"
+                  className="action-btn"
+                  onClick={() => {
+                    if (socketRef.current?.connected) {
+                      setPrintToast({ ok: true, message: 'Print server already connected ✓', at: Date.now() });
+                    } else {
+                      socketRef.current?.connect();
+                      setPrintToast({ ok: false, message: 'Reconnecting to print server (port 3000)...', at: Date.now() });
+                    }
+                  }}
+                >
+                  {serverConnected ? 'Server: On' : 'Reconnect Server'}
+                </button>
+                <button
+                  type="button"
+                  className="action-btn"
+                  onClick={() => window.location.reload()}
+                >
+                  Refresh
+                </button>
+                <button type="button" className="action-btn" onClick={toggleFullscreen}>
+                  ⛶ Fullscreen
+                </button>
+              </div>
             </div>
             <p className="control-upload-url">Upload URL: {window.location.origin}</p>
           </div>
