@@ -84,19 +84,36 @@ function getDefaultPrinterName() {
 
 /** Download a file to temp dir, returns local path */
 async function downloadFile(url, suggestedName) {
+  // Data URLs (test print page) ko direct decode karo
+  if (url.startsWith('data:')) {
+    let ext = suggestedName ? path.extname(suggestedName) : '';
+    if (!ext) {
+      const mime = (url.slice(5).match(/^([^;,]+)/) || [])[1] || 'image/png';
+      ext = '.' + (mime.split('/')[1] || 'bin');
+    }
+    const dataFile = path.join(
+      os.tmpdir(),
+      `qrprint-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`
+    );
+    const b64 = url.slice(url.indexOf(',') + 1);
+    fs.writeFileSync(dataFile, Buffer.from(b64, 'base64'));
+    return dataFile;
+  }
+
+  let ext = suggestedName ? path.extname(suggestedName) : '';
   const res = await fetch(url, { redirect: 'follow' });
   if (!res.ok) {
     throw new Error(`Download failed (HTTP ${res.status}). File link expired ho sakta hai.`);
   }
   const buf = Buffer.from(await res.arrayBuffer());
 
-  let ext = '';
-  try {
-    ext = path.extname(new URL(url).pathname);
-  } catch {
-    /* ignore */
+  if (!ext) {
+    try {
+      ext = path.extname(new URL(url).pathname);
+    } catch {
+      /* ignore */
+    }
   }
-  if (!ext && suggestedName) ext = path.extname(suggestedName);
   if (!ext) ext = '.bin';
 
   const file = path.join(os.tmpdir(), `qrprint-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);

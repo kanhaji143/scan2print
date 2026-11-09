@@ -378,6 +378,56 @@ export default function Counter() {
     await signOut(auth);
   };
 
+  /** Print a generated test page (reference site jaisa Test Print) */
+  const handleTestPrint = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 600;
+    canvas.height = 849; // A4 ratio
+    const ctx = canvas.getContext('2d');
+
+    // White page + blue border
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, 600, 849);
+    ctx.strokeStyle = '#2563eb';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(24, 24, 552, 801);
+
+    ctx.fillStyle = '#0c2653';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 30px Arial';
+    ctx.fillText('QR PRINT SYSTEM', 300, 130);
+    ctx.font = 'bold 24px Arial';
+    ctx.fillStyle = '#2563eb';
+    ctx.fillText('TEST PRINT', 300, 175);
+
+    ctx.fillStyle = '#1f2937';
+    ctx.font = '16px Arial';
+    ctx.fillText(new Date().toLocaleString(), 300, 220);
+    ctx.fillText('Agar ye page printer se nikal gaya,', 300, 300);
+    ctx.fillText('to aapka auto-print system bilkul sahi kaam kar raha hai.', 300, 328);
+    ctx.fillText('Server: Local Print Server (port 3000)', 300, 380);
+
+    const dataUrl = canvas.toDataURL('image/png');
+    if (!socketRef.current?.connected) {
+      setPrintToast({
+        ok: false,
+        message: 'Print server offline hai - pehle server start karo.',
+        at: Date.now(),
+      });
+      return;
+    }
+    socketRef.current.emit('print-job', {
+      jobId: `test-${Date.now()}`,
+      token: 'TEST',
+      url: dataUrl,
+      fileName: 'test-print.png',
+      type: 'image',
+      copies: 1,
+      printer: printerName,
+    });
+    setPrintToast({ ok: true, message: 'Test print bheja gaya - printer dekho!', at: Date.now() });
+  };
+
   // Loading auth state
   if (authLoading) {
     return (
@@ -807,6 +857,9 @@ export default function Counter() {
                 }}
               >
                 Test Sound
+              </button>
+              <button type="button" className="action-btn" onClick={handleTestPrint}>
+                Test Print
               </button>
               <button
                 type="button"

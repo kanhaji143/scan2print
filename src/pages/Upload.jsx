@@ -23,6 +23,7 @@ function ImageSlot({ label, required, preview, onPick, onRemove, onEdit }) {
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraOpening, setCameraOpening] = useState(false);
   const [cameraError, setCameraError] = useState('');
+  const [facingMode, setFacingMode] = useState('environment'); // 'environment' = back, 'user' = front
 
   useEffect(() => {
     if (cameraActive && videoRef.current && streamRef.current) {
@@ -38,6 +39,21 @@ function ImageSlot({ label, required, preview, onPick, onRemove, onEdit }) {
     };
   }, []);
 
+  const startStream = async (mode) => {
+    // facingMode ek "soft" constraint hai - agar device me sirf ek camera
+    // hai to available camera se kaam chal jayega (error nahi aayega).
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: mode, width: { ideal: 1280 }, height: { ideal: 720 } },
+    });
+    streamRef.current = stream;
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.play().catch(() => {});
+    }
+    setCameraActive(true);
+    setCameraOpening(false);
+  };
+
   const openCamera = async () => {
     setCameraError('');
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -46,12 +62,7 @@ function ImageSlot({ label, required, preview, onPick, onRemove, onEdit }) {
     }
     setCameraOpening(true);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: 1280, height: 720 },
-      });
-      streamRef.current = stream;
-      setCameraActive(true);
-      setCameraOpening(false);
+      await startStream(facingMode);
     } catch (err) {
       closeCamera();
       setCameraOpening(false);
@@ -60,6 +71,27 @@ function ImageSlot({ label, required, preview, onPick, onRemove, onEdit }) {
           ? 'Camera permission denied. Allow camera access in browser settings.'
           : 'Camera is unavailable on this device.'
       );
+    }
+  };
+
+  const switchCamera = async () => {
+    const prev = facingMode;
+    const next = prev === 'environment' ? 'user' : 'environment';
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    setFacingMode(next);
+    setCameraOpening(true);
+    try {
+      await startStream(next);
+    } catch {
+      // Doosri camera na mile to pehli wapas chalu karo
+      try {
+        await startStream(prev);
+        setFacingMode(prev);
+      } catch {
+        closeCamera();
+        setCameraError('Camera is unavailable on this device.');
+      }
     }
   };
 
@@ -173,6 +205,9 @@ function ImageSlot({ label, required, preview, onPick, onRemove, onEdit }) {
             <div className="upload-actions">
               <button type="button" className="action-btn" onClick={captureFromVideo}>
                 Capture
+              </button>
+              <button type="button" className="action-btn" onClick={switchCamera}>
+                🔄 Switch Camera
               </button>
               <button type="button" className="action-btn secondary" onClick={closeCamera}>
                 Cancel
