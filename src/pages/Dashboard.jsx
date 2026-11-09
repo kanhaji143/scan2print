@@ -14,6 +14,7 @@ import {
   doc,
 } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
+import { formatINR } from '../lib/pricing';
 
 const STATUSES = ['Pending', 'Paid', 'Printed'];
 
@@ -152,6 +153,7 @@ export default function Dashboard() {
       <div className="dashboard-header">
         <h1>Shop Dashboard</h1>
         <div className="dashboard-header-actions">
+          <a className="scanner-link" href="/counter">Counter</a>
           <a className="scanner-link" href="/qr">QR Code</a>
           <button type="button" className="logout-btn" onClick={handleLogout}>
             Logout
@@ -183,6 +185,30 @@ export default function Dashboard() {
             <p className="created-at">
               Expires: {formatDate(req.expiresAt)}
             </p>
+
+            {/* Print & Payment Info */}
+            {(req.totalAmount > 0 || req.paymentMode) && (
+              <div className="request-meta">
+                {req.totalAmount > 0 && (
+                  <span className="meta-badge amount">{formatINR(req.totalAmount)}</span>
+                )}
+                {req.paymentMode === 'RAZORPAY' && (
+                  <span className="meta-badge online">Online Paid</span>
+                )}
+                {req.paymentMode === 'MANUAL_PAY' && (
+                  <span className="meta-badge cash">Cash</span>
+                )}
+                {req.copies > 1 && (
+                  <span className="meta-badge">{req.copies} copies</span>
+                )}
+                {req.pageColor === 'color' && (
+                  <span className="meta-badge color">Color</span>
+                )}
+                {req.layoutMode === 'id_card' && (
+                  <span className="meta-badge idcard">ID Card</span>
+                )}
+              </div>
+            )}
 
             <div className="images">
               <div className="image-box">

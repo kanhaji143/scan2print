@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Upload from './pages/Upload';
 import Dashboard from './pages/Dashboard';
 import QrGenerator from './pages/QrGenerator';
+import Counter from './pages/Counter';
 import './App.css';
 
 export default function App() {
@@ -20,6 +21,9 @@ export default function App() {
 
   if (route.startsWith('/dashboard')) {
     return <Dashboard navigate={navigate} />;
+  }
+  if (route.startsWith('/counter')) {
+    return <Counter navigate={navigate} />;
   }
   if (route.startsWith('/qr')) {
     return <QrGenerator navigate={navigate} />;

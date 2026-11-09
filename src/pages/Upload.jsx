@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   collection,
   addDoc,
@@ -8,8 +8,13 @@ import {
 import { db } from '../lib/firebase';
 import { generateToken } from '../lib/requests';
 import { uploadToTempFile } from '../lib/tempfile';
+import { calculatePrice, formatINR } from '../lib/pricing';
+import { processPayment } from '../lib/razorpay';
+import ImageEditor from '../components/ImageEditor';
+import PrintSettings from '../components/PrintSettings';
+import LivePreview from '../components/LivePreview';
 
-function ImageSlot({ label, required, preview, onPick, onRemove }) {
+function ImageSlot({ label, required, preview, onPick, onRemove, onEdit }) {
   const cameraRef = useRef(null);
   const galleryRef = useRef(null);
   const videoRef = useRef(null);
@@ -36,7 +41,6 @@ function ImageSlot({ label, required, preview, onPick, onRemove }) {
   const openCamera = async () => {
     setCameraError('');
     if (!navigator.mediaDevices?.getUserMedia) {
-      // Insecure context (mobile HTTP) -> native camera input fallback
       cameraRef.current?.click();
       return;
     }
@@ -91,11 +95,10 @@ function ImageSlot({ label, required, preview, onPick, onRemove }) {
         <div className="preview-wrap">
           <img src={preview} alt={label} className="preview" />
           <div className="upload-actions">
-            <button
-              type="button"
-              className="action-btn"
-              onClick={openCamera}
-            >
+            <button type="button" className="action-btn" onClick={onEdit}>
+              Edit
+            </button>
+            <button type="button" className="action-btn" onClick={openCamera}>
               Take Photo
             </button>
             <button
@@ -103,7 +106,7 @@ function ImageSlot({ label, required, preview, onPick, onRemove }) {
               className="action-btn secondary"
               onClick={() => galleryRef.current?.click()}
             >
-              Choose from Gallery
+              Gallery
             </button>
           </div>
           <button type="button" className="remove-btn" onClick={onRemove}>
@@ -259,16 +262,55 @@ function PdfSlot({ file, onPick, onRemove, onInvalidType }) {
 }
 
 export default function Upload() {
+  // File states
   const [image1, setImage1] = useState(null);
   const [preview1, setPreview1] = useState(null);
   const [image2, setImage2] = useState(null);
   const [preview2, setPreview2] = useState(null);
   const [pdfFile, setPdfFile] = useState(null);
+
+  // Print settings
+  const [layoutMode, setLayoutMode] = useState('full_page');
+  const [orientation, setOrientation] = useState('portrait');
+  const [scaling, setScaling] = useState('fit');
+  const [pageColor, setPageColor] = useState('bw');
+  const [copies, setCopies] = useState(1);
+  const [customPages, setCustomPages] = useState([]);
+  const [customerName, setCustomerName] = useState('');
+
+  // UI states
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
   const [progressLabel, setProgressLabel] = useState('');
   const [progress, setProgress] = useState(0);
+  const [step, setStep] = useState(1); // 1 = upload, 2 = settings/payment
+  const [editingSlot, setEditingSlot] = useState(null); // 1 or 2
+  const [paymentMode, setPaymentMode] = useState(''); // 'razorpay' | 'manual'
+
+  // Determine total pages from uploaded files
+  const totalPages = useMemo(() => {
+    let pages = 0;
+    if (image1) pages += 1;
+    if (image2) pages += 1;
+    if (pdfFile) pages += 1; // PDF counts as 1 page for now
+    return Math.max(1, pages);
+  }, [image1, image2, pdfFile]);
+
+  // Effective pages (custom selection or all)
+  const effectivePages = customPages.length > 0 ? customPages.length : totalPages;
+
+  // Price calculation
+  const pricing = useMemo(
+    () =>
+      calculatePrice({
+        totalPages: effectivePages,
+        copies,
+        pageColor,
+        layoutMode,
+      }),
+    [effectivePages, copies, pageColor, layoutMode]
+  );
 
   const pick = (slot, file) => {
     if (!file) return;
@@ -296,20 +338,56 @@ export default function Upload() {
     }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleEditApply = (blob) => {
+    const file = new File([blob], `edited-${Date.now()}.png`, { type: 'image/png' });
+    if (editingSlot === 1) {
+      if (preview1) URL.revokeObjectURL(preview1);
+      setPreview1(URL.createObjectURL(file));
+      setImage1(file);
+    } else {
+      if (preview2) URL.revokeObjectURL(preview2);
+      setPreview2(URL.createObjectURL(file));
+      setImage2(file);
+    }
+    setEditingSlot(null);
+  };
+
+  const handleSubmitDocuments = () => {
     if (!image1) {
       setError('First image is required.');
       return;
     }
-    if (pdfFile && pdfFile.type && pdfFile.type !== 'application/pdf') {
-      setError('PDF field accepts .pdf files only.');
-      return;
-    }
-    setSubmitting(true);
     setError('');
+    setStep(2);
+  };
+
+  const handlePayment = async (mode) => {
+    setError('');
+    setPaymentMode(mode);
+    setSubmitting(true);
     setProgress(0);
+
+    const orderId = `MOC-${Date.now().toString().slice(-4)}`;
+
     try {
+      // For Razorpay, process payment first
+      let paymentData = null;
+      if (mode === 'razorpay') {
+        try {
+          paymentData = await processPayment({
+            amount: pricing.totalAmount,
+            customerName,
+            orderId,
+          });
+        } catch (payErr) {
+          setError(payErr?.message || 'Payment failed.');
+          setSubmitting(false);
+          setPaymentMode('');
+          return;
+        }
+      }
+
+      // Upload files
       const uploads = [];
       const jobs = [
         { key: 'image1', label: 'Image 1', file: image1 },
@@ -330,10 +408,7 @@ export default function Upload() {
       for (const { info } of uploads) {
         if (info?.expiryTime && typeof info.expiryTime === 'number') {
           const candidate = new Date(info.expiryTime);
-          if (
-            !expiresAtValue ||
-            candidate.getTime() < expiresAtValue.getTime()
-          ) {
+          if (!expiresAtValue || candidate.getTime() < expiresAtValue.getTime()) {
             expiresAtValue = candidate;
           }
         }
@@ -343,12 +418,27 @@ export default function Upload() {
       }
 
       const has = (key) => uploads.some((u) => u.key === key);
-      const payloadFor = (key) =>
-        uploads.find((u) => u.key === key)?.info || null;
+      const payloadFor = (key) => uploads.find((u) => u.key === key)?.info || null;
 
       const payload = {
         token: generateToken(),
-        status: 'Pending',
+        orderId,
+        status: mode === 'razorpay' ? 'Paid' : 'Pending',
+        paymentMode: mode === 'razorpay' ? 'RAZORPAY' : 'MANUAL_PAY',
+        paymentStatus: mode === 'razorpay' ? 'PAID' : 'PENDING',
+        razorpayPaymentId: paymentData?.payment?.razorpay_payment_id || '',
+        razorpayOrderId: paymentData?.payment?.razorpay_order_id || '',
+        customerName: customerName || '',
+        layoutMode,
+        orientation,
+        scaling,
+        pageColor,
+        copies,
+        customPages: customPages.length > 0 ? customPages : [],
+        totalPages: effectivePages,
+        ratePerPage: pricing.ratePerPage,
+        totalAmount: pricing.totalAmount,
+        printStatus: mode === 'razorpay' ? 'WAITING_CONFIRMATION' : 'WAITING_OPERATOR_CONFIRMATION',
         uploadedAt: serverTimestamp(),
         expiresAt: Timestamp.fromDate(expiresAtValue),
         hasImage1: has('image1'),
@@ -362,17 +452,23 @@ export default function Upload() {
       await addDoc(collection(db, 'printRequests'), payload);
 
       setResult(payload.token);
+      // Reset
       setImage1(null);
       setPreview1(null);
       setImage2(null);
       setPreview2(null);
       setPdfFile(null);
+      setCopies(1);
+      setCustomPages([]);
+      setCustomerName('');
+      setStep(1);
       setProgress(0);
       setProgressLabel('');
     } catch (err) {
       setError(err?.message || 'Failed to submit. Please try again.');
     } finally {
       setSubmitting(false);
+      setPaymentMode('');
       setProgressLabel('');
       setProgress(0);
     }
@@ -383,13 +479,14 @@ export default function Upload() {
     setError('');
   };
 
+  // Success screen
   if (result) {
     return (
       <div className="page">
         <h1>Document Print Upload</h1>
         <div className="success-card">
           <p className="success-title">Upload successful!</p>
-          <p className="token-label">Your temporary token number:</p>
+          <p className="token-label">Your token number:</p>
           <p className="token">{result}</p>
           <p className="note">Show this token at the shop to collect your prints.</p>
           <button type="button" className="submit-btn" onClick={handleReset}>
@@ -407,51 +504,158 @@ export default function Upload() {
       <p className="scanner-link-row">
         <a className="scanner-link" href="/qr">QR Code Generator</a>
         <span className="link-separator">•</span>
+        <a className="scanner-link" href="/counter">Counter Dashboard</a>
+        <span className="link-separator">•</span>
         <a className="scanner-link" href="/dashboard">Admin Dashboard</a>
       </p>
 
-      <form onSubmit={handleSubmit} className="form">
-        <ImageSlot
-          label="First Image"
-          required
-          preview={preview1}
-          onPick={(f) => pick(1, f)}
-          onRemove={() => remove(1)}
-        />
+      {/* Step indicator */}
+      <div className="step-indicator">
+        <div className={`step-dot ${step >= 1 ? 'active' : ''}`}>1</div>
+        <div className={`step-line ${step >= 2 ? 'active' : ''}`} />
+        <div className={`step-dot ${step >= 2 ? 'active' : ''}`}>2</div>
+      </div>
 
-        <ImageSlot
-          label="Second Image"
-          required={false}
-          preview={preview2}
-          onPick={(f) => pick(2, f)}
-          onRemove={() => remove(2)}
-        />
+      {step === 1 && (
+        <form onSubmit={(e) => { e.preventDefault(); handleSubmitDocuments(); }} className="form">
+          <ImageSlot
+            label="First Image"
+            required
+            preview={preview1}
+            onPick={(f) => pick(1, f)}
+            onRemove={() => remove(1)}
+            onEdit={() => setEditingSlot(1)}
+          />
+          <ImageSlot
+            label="Second Image"
+            required={false}
+            preview={preview2}
+            onPick={(f) => pick(2, f)}
+            onRemove={() => remove(2)}
+            onEdit={() => setEditingSlot(2)}
+          />
+          <PdfSlot
+            file={pdfFile}
+            onPick={(f) => { if (f) setPdfFile(f); setError(''); }}
+            onRemove={() => setPdfFile(null)}
+            onInvalidType={() => setError('PDF field accepts .pdf files only.')}
+          />
 
-        <PdfSlot
-          file={pdfFile}
-          onPick={(f) => {
-            if (f) setPdfFile(f);
-            setError('');
-          }}
-          onRemove={() => setPdfFile(null)}
-          onInvalidType={() => setError('PDF field accepts .pdf files only.')}
-        />
+          {error && <p className="error">{error}</p>}
 
-        {submitting && (
-          <div className="progress-wrap">
-            <p className="progress-label">{progressLabel}</p>
-            <div className="progress-bar">
-              <div className="progress-fill" style={{ width: `${progress}%` }} />
+          <button type="submit" className="submit-btn">
+            Continue to Print Settings
+          </button>
+        </form>
+      )}
+
+      {step === 2 && (
+        <div className="form">
+          <div className="upload-summary">
+            <p className="subtitle">
+              {totalPages} page(s) | {image1 ? '1 image' : ''} {image2 ? '+ 1 image' : ''} {pdfFile ? '+ PDF' : ''}
+            </p>
+          </div>
+
+          {/* Live Preview */}
+          {preview1 && (
+            <LivePreview
+              imageUrl={preview1}
+              layoutMode={layoutMode}
+              orientation={orientation}
+              scaling={scaling}
+              pageColor={pageColor}
+            />
+          )}
+
+          {/* Print Settings */}
+          <PrintSettings
+            layoutMode={layoutMode}
+            setLayoutMode={setLayoutMode}
+            orientation={orientation}
+            setOrientation={setOrientation}
+            scaling={scaling}
+            setScaling={setScaling}
+            pageColor={pageColor}
+            setPageColor={setPageColor}
+            copies={copies}
+            setCopies={setCopies}
+            totalPages={totalPages}
+            customPages={customPages}
+            setCustomPages={setCustomPages}
+            customerName={customerName}
+            setCustomerName={setCustomerName}
+          />
+
+          {/* Price Summary */}
+          <div className="price-summary">
+            <div className="price-row">
+              <span>Pages:</span>
+              <span>{effectivePages}</span>
+            </div>
+            <div className="price-row">
+              <span>Copies:</span>
+              <span>{copies}</span>
+            </div>
+            <div className="price-row">
+              <span>Rate:</span>
+              <span>{formatINR(pricing.ratePerPage)}/page</span>
+            </div>
+            <div className="price-row total">
+              <span>Total:</span>
+              <span>{formatINR(pricing.totalAmount)}</span>
             </div>
           </div>
-        )}
 
-        {error && <p className="error">{error}</p>}
+          {/* Payment Buttons */}
+          <div className="payment-section">
+            <button
+              type="button"
+              className="submit-btn razorpay-btn"
+              disabled={submitting}
+              onClick={() => handlePayment('razorpay')}
+            >
+              {paymentMode === 'razorpay' ? 'Processing...' : `Pay with Razorpay (${formatINR(pricing.totalAmount)})`}
+            </button>
+            <button
+              type="button"
+              className="submit-btn manual-btn"
+              disabled={submitting}
+              onClick={() => handlePayment('manual')}
+            >
+              {paymentMode === 'manual' ? 'Submitting...' : 'Pay with Cash (at Counter)'}
+            </button>
+            <button
+              type="button"
+              className="action-btn secondary"
+              onClick={() => setStep(1)}
+              disabled={submitting}
+            >
+              Back
+            </button>
+          </div>
 
-        <button type="submit" className="submit-btn" disabled={submitting}>
-          {submitting ? 'Submitting...' : 'Submit'}
-        </button>
-      </form>
+          {submitting && (
+            <div className="progress-wrap">
+              <p className="progress-label">{progressLabel || 'Processing...'}</p>
+              <div className="progress-bar">
+                <div className="progress-fill" style={{ width: `${progress}%` }} />
+              </div>
+            </div>
+          )}
+
+          {error && <p className="error">{error}</p>}
+        </div>
+      )}
+
+      {/* Image Editor Modal */}
+      {editingSlot && (
+        <ImageEditor
+          imageUrl={editingSlot === 1 ? preview1 : preview2}
+          onApply={handleEditApply}
+          onCancel={() => setEditingSlot(null)}
+        />
+      )}
     </div>
   );
 }
