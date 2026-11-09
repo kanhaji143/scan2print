@@ -7,6 +7,7 @@ import {
   updateDoc,
   doc,
   getDocs,
+  deleteDoc,
 } from 'firebase/firestore';
 import {
   onAuthStateChanged,
@@ -61,6 +62,12 @@ export default function Counter() {
   const [printToast, setPrintToast] = useState(null);
   // Undo/Revoke system — galti bina refresh ke sudharo
   const [undoToast, setUndoToast] = useState(null); // { message, undo }
+  // Settings: local network IP for print server
+  const [serverHost, setServerHost] = useState(() => {
+    try { return localStorage.getItem('qrPrintServerHost') || 'localhost'; } catch { return 'localhost'; }
+  });
+  const [serverHostInput, setServerHostInput] = useState('');
+  const [resetting, setResetting] = useState(false);
 
   const seenRef = useRef(new Set());
   const countdownTimerRef = useRef(null);
@@ -87,7 +94,7 @@ export default function Counter() {
 
   // Connect to the local print server (if running on the shop PC)
   useEffect(() => {
-    const socket = io('http://localhost:3000', {
+    const socket = io(`http://${serverHost}:3000`, {
       reconnectionAttempts: 5,
       timeout: 4000,
     });
@@ -111,7 +118,7 @@ export default function Counter() {
       socket.close();
       socketRef.current = null;
     };
-  }, []);
+  }, [serverHost]);
 
   // Auto-hide print toast
   useEffect(() => {
@@ -495,6 +502,31 @@ export default function Counter() {
     await signOut(auth);
   };
 
+  /** Fresh Start: saare old/dummy records delete karo (Reset to 0) */
+  const handleFreshStart = async () => {
+    if (
+      !window.confirm(
+        'Saare purane records aur dummy data delete ho jayenge. Kya aap sure hain? (Reset to 0)'
+      )
+    ) {
+      return;
+    }
+    setResetting(true);
+    try {
+      const snap = await getDocs(collection(db, 'printRequests'));
+      await Promise.all(
+        snap.docs.map((d) => deleteDoc(doc(db, 'printRequests', d.id)))
+      );
+      setRequests([]);
+      setShowSettings(false);
+    } catch (err) {
+      console.error(err);
+      alert('Reset failed: ' + (err?.message || 'unknown error'));
+    } finally {
+      setResetting(false);
+    }
+  };
+
   /** Print a generated test page (reference site jaisa Test Print) */
   const handleTestPrint = () => {
     const canvas = document.createElement('canvas');
@@ -640,7 +672,7 @@ export default function Counter() {
           <button type="button" className="counter-btn" onClick={() => setShowLedger(true)}>
             Payments
           </button>
-          <button type="button" className="counter-btn" onClick={() => setShowSettings(true)}>
+          <button type="button" className="counter-btn" onClick={() => { setServerHostInput(serverHost); setShowSettings(true); }}>
             Settings
           </button>
           <button type="button" className="counter-btn" onClick={() => setShowControl(true)}>
@@ -987,13 +1019,13 @@ export default function Counter() {
         <div className="modal-backdrop" onClick={() => setShowSettings(false)}>
           <div className="modal settings-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>System Settings</h3>
+              <h3>सिस्टम सेटिंग्स</h3>
               <button type="button" className="modal-close" onClick={() => setShowSettings(false)}>
                 ×
               </button>
             </div>
             <div className="setting-group">
-              <label className="setting-label">Active Printer:</label>
+              <label className="setting-label">सक्रिय प्रिंटर चुनें (उदा. Epson L3250):</label>
               <input
                 type="text"
                 className="input"
@@ -1003,7 +1035,7 @@ export default function Counter() {
               />
             </div>
             <div className="setting-group">
-              <label className="setting-label">Auto-Print Countdown (seconds):</label>
+              <label className="setting-label">ऑटो-प्रिंट काउंटडाउन समय (सेकंड):</label>
               <input
                 type="number"
                 className="input"
@@ -1017,9 +1049,45 @@ export default function Counter() {
                 max="30"
               />
             </div>
-            <button type="button" className="submit-btn" onClick={() => setShowSettings(false)}>
-              Save Settings
-            </button>
+            <div className="setting-group">
+              <label className="setting-label">लोकल नेटवर्क IP (यदि आवश्यक हो तो बदलें):</label>
+              <input
+                type="text"
+                className="input"
+                value={serverHostInput}
+                onChange={(e) => setServerHostInput(e.target.value)}
+                placeholder="उदा. 192.168.1.100"
+              />
+            </div>
+            <div className="setting-group">
+              <label className="setting-label">डमी डेटा साफ करें व नई शुरुआत (Fresh Start):</label>
+              <button
+                type="button"
+                className="action-btn danger"
+                onClick={handleFreshStart}
+                disabled={resetting}
+                style={{ width: '100%' }}
+              >
+                {resetting ? 'Resetting...' : 'सभी पुराने रिकॉर्ड व डमी डेटा हटाएं (Reset to 0)'}
+              </button>
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="action-btn secondary" onClick={() => setShowSettings(false)}>
+                बंद करें
+              </button>
+              <button
+                type="button"
+                className="submit-btn"
+                onClick={() => {
+                  setPrinterName(printerName);
+                  setServerHost(serverHostInput.trim() || 'localhost');
+                  try { localStorage.setItem('qrPrintServerHost', serverHostInput.trim() || 'localhost'); } catch {}
+                  setShowSettings(false);
+                }}
+              >
+                सेव करें
+              </button>
+            </div>
           </div>
         </div>
       )}
