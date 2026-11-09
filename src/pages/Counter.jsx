@@ -283,24 +283,40 @@ export default function Counter() {
     completeOrder(autoPrintOrder);
   };
 
-  const handleConfirmManual = async () => {
-    if (manualOrder) {
-      try {
-        await updateDoc(doc(db, 'printRequests', manualOrder.id), {
-          paymentStatus: 'PAID',
-          printStatus: 'COMPLETED',
-        });
-      } catch (err) {
-        console.error(err);
-      }
-      // Pehle local print server try karo (automatic printing)
-      const sent = sendPrintJob(manualOrder);
-      if (!sent) openDocumentFor(manualOrder);
+  /** Shared: cash milne par order print karo (modal ya queue se) */
+  const confirmCash = async (order) => {
+    if (!order) return;
+    try {
+      await updateDoc(doc(db, 'printRequests', order.id), {
+        paymentStatus: 'PAID',
+        printStatus: 'COMPLETED',
+      });
+    } catch (err) {
+      console.error(err);
     }
+    // Pehle local print server try karo (automatic printing)
+    const sent = sendPrintJob(order);
+    if (!sent) openDocumentFor(order); // fallback: file khol do
     stopCashAlertLoop();
     stopTitleBlink();
     setManualOrder(null);
   };
+
+  /** Cancelled/baaki pade order ko baad mein print karo (mistake recovery) */
+  const reprintOrder = async (order) => {
+    if (!order) return;
+    const sent = sendPrintJob(order);
+    if (!sent) openDocumentFor(order);
+    try {
+      await updateDoc(doc(db, 'printRequests', order.id), {
+        printStatus: 'COMPLETED',
+      });
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleConfirmManual = () => confirmCash(manualOrder);
 
   const handleLaterManual = () => {
     stopCashAlertLoop();
@@ -606,6 +622,30 @@ export default function Counter() {
                     <span className="status-badge cash">Cash</span>
                   )}
                 </div>
+                {/* Mistake recovery: Later press ho gaya to yahan se confirm karo */}
+                {(req.printStatus === 'WAITING_OPERATOR_CONFIRMATION' ||
+                  (req.printStatus === 'CANCELLED' && req.paymentMode === 'RAZORPAY')) && (
+                  <div className="queue-item-actions">
+                    {req.printStatus === 'WAITING_OPERATOR_CONFIRMATION' && (
+                      <button
+                        type="button"
+                        className="queue-action-btn cash"
+                        onClick={() => confirmCash(req)}
+                      >
+                        ✓ Cash Received - Print
+                      </button>
+                    )}
+                    {req.printStatus === 'CANCELLED' && req.paymentMode === 'RAZORPAY' && (
+                      <button
+                        type="button"
+                        className="queue-action-btn reprint"
+                        onClick={() => reprintOrder(req)}
+                      >
+                        ↻ Print Now
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
