@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { formatINR } from '../lib/pricing';
+import TopBar from '../components/TopBar';
 
 const STATUSES = ['Pending', 'Paid', 'Printed'];
 
@@ -118,38 +119,43 @@ export default function Dashboard() {
 
   if (!user) {
     return (
-      <div className="page dashboard">
-        <h1>Shop Dashboard</h1>
-        <p className="subtitle">Sign in to access the dashboard.</p>
+      <>
+        <TopBar page="Dashboard" />
+        <div className="page dashboard">
+          <h1>Shop Dashboard</h1>
+          <p className="subtitle">Sign in to access the dashboard.</p>
 
-        <form onSubmit={handleLogin} className="form">
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className="input"
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            className="input"
-          />
-          {authError && <p className="error">{authError}</p>}
-          <button type="submit" className="submit-btn" disabled={signingIn}>
-            {signingIn ? 'Signing in...' : 'Sign In'}
-          </button>
-        </form>
-      </div>
+          <form onSubmit={handleLogin} className="form">
+            <input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="input"
+            />
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="input"
+            />
+            {authError && <p className="error">{authError}</p>}
+            <button type="submit" className="submit-btn" disabled={signingIn}>
+              {signingIn ? 'Signing in...' : 'Sign In'}
+            </button>
+          </form>
+        </div>
+      </>
     );
   }
 
   return (
-    <div className="page dashboard">
+    <>
+      <TopBar page="Dashboard" />
+      <div className="page dashboard">
       <div className="dashboard-header">
         <h1>Shop Dashboard</h1>
         <div className="dashboard-header-actions">
@@ -341,6 +347,7 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
-    </div>
+      </div>
+      </>
   );
 }

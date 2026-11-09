@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
+import TopBar from '../components/TopBar';
 
 export default function QrGenerator() {
   const [text, setText] = useState('');
@@ -29,33 +30,36 @@ export default function QrGenerator() {
   };
 
   return (
-    <div className="page qr-generator-page">
-      <h1>QR Code Generator</h1>
-      <p className="subtitle">Create a QR code for your shop link or any text.</p>
+    <>
+      <TopBar page="QR Code" />
+      <div className="page qr-generator-page">
+        <h1>QR Code Generator</h1>
+        <p className="subtitle">Create a QR code for your shop link or any text.</p>
 
-      <div className="qr-generator-form">
-        <input
-          type="text"
-          className="input"
-          placeholder="Enter URL or text"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-        />
-        <button type="button" className="submit-btn" onClick={generate}>
-          Generate QR Code
-        </button>
-      </div>
-
-      {error && <p className="error">{error}</p>}
-
-      {dataUrl && (
-        <div className="qr-result">
-          <img src={dataUrl} alt="QR Code" className="qr-image" />
-          <a className="download-link" href={dataUrl} download="qrcode.png">
-            Download QR Code
-          </a>
+        <div className="qr-generator-form">
+          <input
+            type="text"
+            className="input"
+            placeholder="Enter URL or text"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+          />
+          <button type="button" className="submit-btn" onClick={generate}>
+            Generate QR Code
+          </button>
         </div>
-      )}
-    </div>
+
+        {error && <p className="error">{error}</p>}
+
+        {dataUrl && (
+          <div className="qr-result">
+            <img src={dataUrl} alt="QR Code" className="qr-image" />
+            <a className="download-link" href={dataUrl} download="qrcode.png">
+              Download QR Code
+            </a>
+          </div>
+        )}
+      </div>
+    </>
   );
 }

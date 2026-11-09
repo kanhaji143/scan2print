@@ -99,7 +99,7 @@ export async function openRazorpayCheckout({ amount, orderId, name = '', descrip
       name: name || '',
     },
     theme: {
-      color: '#2563eb',
+      color: '#0b1e3d',
     },
     modal: {
       ondismiss: function () {

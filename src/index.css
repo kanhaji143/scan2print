@@ -1,11 +1,15 @@
 :root {
-  --bg: #f5f6f8;
+  --bg: #eef2f8;
   --surface: #ffffff;
-  --text: #1f2937;
-  --muted: #6b7280;
-  --primary: #2563eb;
-  --border: #e5e7eb;
-  --radius: 8px;
+  --text: #16233b;
+  --muted: #5d6b84;
+  --primary: #0b1e3d;
+  --primary-2: #14305e;
+  --accent: #f59e0b;
+  --accent-2: #fbbf24;
+  --border: #dce4f0;
+  --radius: 14px;
+  --shadow: 0 2px 14px rgba(11, 30, 61, 0.08);
 }
 
 * {
@@ -15,9 +19,54 @@
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  background: var(--bg);
+  background: linear-gradient(180deg, #eef2f8 0%, #e4ebf5 100%);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
+}
+
+/* ===== Branded Top Bar (navy + gold) ===== */
+.topbar {
+  background: linear-gradient(135deg, #0b1e3d 0%, #14305e 55%, #1c3f7d 100%);
+  border-bottom: 3px solid var(--accent);
+  box-shadow: 0 4px 18px rgba(11, 30, 61, 0.35);
+  padding: 18px 16px;
+}
+
+.topbar-inner {
+  max-width: 480px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.topbar-logo {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  background: #fff;
+  padding: 5px;
+  object-fit: contain;
+  box-shadow: 0 0 0 2px var(--accent-2);
+}
+
+.topbar-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar-name {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1.2;
+}
+
+.topbar-tagline {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent-2);
+  letter-spacing: 0.5px;
 }
 
 #root {
@@ -119,14 +168,26 @@ p {
 }
 
 .submit-btn {
-  padding: 12px;
+  padding: 13px;
   border: none;
-  background: var(--primary);
-  color: #fff;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+  color: #16233b;
   border-radius: var(--radius);
   cursor: pointer;
   font-size: 1rem;
-  font-weight: 600;
+  font-weight: 800;
+  box-shadow: 0 4px 16px rgba(245, 158, 11, 0.4);
+  transition: transform 0.1s, box-shadow 0.15s;
+}
+
+.submit-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(245, 158, 11, 0.5);
+}
+
+.submit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .error {
@@ -138,14 +199,17 @@ p {
 .success-card {
   background: var(--surface);
   border: 1px solid var(--border);
+  border-top: 4px solid var(--accent);
   border-radius: var(--radius);
-  padding: 20px;
+  padding: 24px 20px;
   text-align: center;
+  box-shadow: var(--shadow);
 }
 
 .success-title {
   color: #16a34a;
-  font-weight: 600;
+  font-weight: 700;
+  font-size: 1.1rem;
   margin: 0 0 12px;
 }
 
@@ -154,12 +218,17 @@ p {
   font-size: 0.9rem;
 }
 
-.token {
+.success-card .token {
+  display: inline-block;
   font-size: 1.5rem;
-  font-weight: 700;
-  letter-spacing: 2px;
+  font-weight: 800;
+  letter-spacing: 3px;
   margin: 8px 0 12px;
-  color: var(--text);
+  color: var(--accent-2);
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-2) 100%);
+  padding: 10px 24px;
+  border-radius: 12px;
+  box-shadow: 0 4px 14px rgba(11, 30, 61, 0.3);
 }
 
 .note {
@@ -453,13 +522,23 @@ p {
 }
 
 .scanner-link {
+  display: inline-block;
   color: var(--primary);
-  font-size: 0.9rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
   text-decoration: none;
+  transition: all 0.15s;
 }
 
 .scanner-link:hover {
-  text-decoration: underline;
+  border-color: var(--accent);
+  color: var(--primary);
+  background: #fffbeb;
+  text-decoration: none;
 }
 
 .dashboard-header-actions {
@@ -867,12 +946,13 @@ p {
 }
 
 .razorpay-btn {
-  background: #0c2653;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-2) 100%);
   color: #fff;
+  box-shadow: 0 4px 16px rgba(11, 30, 61, 0.35);
 }
 
 .razorpay-btn:hover {
-  background: #133572;
+  background: linear-gradient(135deg, #0d2348 0%, #1a3a70 100%);
 }
 
 .manual-btn {
@@ -1058,7 +1138,8 @@ p {
 }
 
 .counter-header {
-  background: linear-gradient(135deg, #0c2653 0%, #1a3a6b 100%);
+  background: linear-gradient(135deg, #0b1e3d 0%, #14305e 60%, #1c3f7d 100%);
+  border-bottom: 3px solid var(--accent);
   color: #fff;
   padding: 16px 24px;
   display: flex;
@@ -1069,6 +1150,22 @@ p {
   position: sticky;
   top: 0;
   z-index: 50;
+}
+
+.counter-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.counter-logo {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #fff;
+  padding: 4px;
+  object-fit: contain;
+  box-shadow: 0 0 0 2px var(--accent-2);
 }
 
 .counter-brand h1 {
@@ -1147,7 +1244,8 @@ p {
 
 .counter-qr-box {
   background: #fff;
-  border: 2px solid var(--primary);
+  border: 3px solid var(--accent);
+  box-shadow: 0 4px 16px rgba(11, 30, 61, 0.12);
   border-radius: var(--radius);
   padding: 16px;
   display: inline-block;
@@ -1205,8 +1303,8 @@ p {
 }
 
 .queue-badge {
-  background: var(--primary);
-  color: #fff;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #16233b;
   padding: 4px 12px;
   border-radius: 999px;
   font-size: 0.8rem;

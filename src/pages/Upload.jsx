@@ -13,6 +13,7 @@ import { processPayment } from '../lib/razorpay';
 import ImageEditor from '../components/ImageEditor';
 import PrintSettings from '../components/PrintSettings';
 import LivePreview from '../components/LivePreview';
+import TopBar from '../components/TopBar';
 
 function ImageSlot({ label, required, preview, onPick, onRemove, onEdit }) {
   const cameraRef = useRef(null);
@@ -517,25 +518,30 @@ export default function Upload() {
   // Success screen
   if (result) {
     return (
-      <div className="page">
-        <h1>Document Print Upload</h1>
-        <div className="success-card">
-          <p className="success-title">Upload successful!</p>
-          <p className="token-label">Your token number:</p>
-          <p className="token">{result}</p>
-          <p className="note">Show this token at the shop to collect your prints.</p>
-          <button type="button" className="submit-btn" onClick={handleReset}>
-            Upload Another
-          </button>
+      <>
+        <TopBar page="Upload" />
+        <div className="page">
+          <h1>Document Print Upload</h1>
+          <div className="success-card">
+            <p className="success-title">Upload successful!</p>
+            <p className="token-label">Your token number:</p>
+            <p className="token">{result}</p>
+            <p className="note">Show this token at the shop to collect your prints.</p>
+            <button type="button" className="submit-btn" onClick={handleReset}>
+              Upload Another
+            </button>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
   return (
-    <div className="page">
-      <h1>Document Print Upload</h1>
-      <p className="subtitle">Upload your document images for printing.</p>
+    <>
+      <TopBar page="Upload" />
+      <div className="page">
+        <h1>Document Print Upload</h1>
+        <p className="subtitle">Upload your document images for printing.</p>
       <p className="scanner-link-row">
         <a className="scanner-link" href="/qr">QR Code Generator</a>
         <span className="link-separator">•</span>
@@ -691,6 +697,7 @@ export default function Upload() {
           onCancel={() => setEditingSlot(null)}
         />
       )}
-    </div>
+        </div>
+      </>
   );
 }

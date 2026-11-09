@@ -81,7 +81,7 @@ export default function ImageEditor({ imageUrl, onApply, onCancel }) {
     ctx.fillRect(cropX + cropW, cropY, w - cropX - cropW, cropH);
 
     // Crop border
-    ctx.strokeStyle = '#2563eb';
+    ctx.strokeStyle = '#0b1e3d';
     ctx.lineWidth = 2;
     ctx.strokeRect(cropX, cropY, cropW, cropH);
 

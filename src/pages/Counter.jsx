@@ -26,6 +26,7 @@ import {
   stopCashAlertLoop,
 } from '../lib/notifications';
 import { formatINR } from '../lib/pricing';
+import { BRAND, applyBrandTitle } from '../lib/branding';
 
 function formatDate(ts) {
   if (!ts) return '-';
@@ -75,6 +76,7 @@ export default function Counter() {
 
   // Generate QR locally for the upload URL
   useEffect(() => {
+    applyBrandTitle('Counter');
     QRCode.toDataURL(window.location.origin + '/', { width: 400, margin: 2 })
       .then(setQrDataUrl)
       .catch(() => setQrDataUrl(''));
@@ -484,8 +486,20 @@ export default function Counter() {
       {/* Header */}
       <header className="counter-header">
         <div className="counter-brand">
-          <h1>Print Counter</h1>
-          <span className="counter-subtitle">Live Print Dashboard</span>
+          <img
+            src={BRAND.logo}
+            alt="Logo"
+            className="counter-logo"
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+            }}
+          />
+          <div>
+            <h1>Print Counter</h1>
+            <span className="counter-subtitle">
+              {BRAND.shopName} — Live Print Dashboard
+            </span>
+          </div>
         </div>
         <div className="counter-header-actions">
           <span className={`server-badge ${serverConnected ? 'on' : 'off'}`}>
