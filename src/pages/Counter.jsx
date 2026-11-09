@@ -59,9 +59,12 @@ export default function Counter() {
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [serverConnected, setServerConnected] = useState(false);
   const [printToast, setPrintToast] = useState(null);
+  // Undo/Revoke system — galti bina refresh ke sudharo
+  const [undoToast, setUndoToast] = useState(null); // { message, undo }
 
   const seenRef = useRef(new Set());
   const countdownTimerRef = useRef(null);
+  const undoTimerRef = useRef(null);
   const socketRef = useRef(null);
   const jobsRef = useRef(new Map()); // jobId -> order (print fail par file kholne ke liye)
 
@@ -158,9 +161,22 @@ export default function Counter() {
       clearCountdown();
       stopCashAlertLoop();
       stopTitleBlink();
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
     },
     []
   );
+
+  /** Undo toast dikhao (10 sec) — har action ke baad galti turant sudharo, bina refresh */
+  const showUndoToast = (message, undoFn) => {
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    setUndoToast({ message, undo: undoFn });
+    undoTimerRef.current = setTimeout(() => setUndoToast(null), 10000);
+  };
+
+  const hideUndoToast = () => {
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    setUndoToast(null);
+  };
 
   /** Open the uploaded document so the operator can print it */
   const openDocumentFor = (order) => {
@@ -267,8 +283,16 @@ export default function Counter() {
   const handleCancelAutoPrint = async () => {
     clearCountdown();
     if (autoPrintOrder) {
+      const order = autoPrintOrder;
+      // Undo: cancel paylaan kar do — countdown modal phir se aayega
+      showUndoToast(`#${order.token} cancel ho gaya — 10 sec tak Undo possible`, () => {
+        seenRef.current.delete(order.id);
+        updateDoc(doc(db, 'printRequests', order.id), {
+          printStatus: 'WAITING_CONFIRMATION',
+        }).catch((err) => console.error(err));
+      });
       try {
-        await updateDoc(doc(db, 'printRequests', autoPrintOrder.id), {
+        await updateDoc(doc(db, 'printRequests', order.id), {
           printStatus: 'CANCELLED',
         });
       } catch (err) {
@@ -283,9 +307,27 @@ export default function Counter() {
     completeOrder(autoPrintOrder);
   };
 
+  /** Printed/complete order ko wapas pending karo (Revoke — bina refresh) */
+  const revertCompleted = async (order) => {
+    if (!order) return;
+    const isOnline = order.paymentMode === 'RAZORPAY';
+    seenRef.current.delete(order.id); // modal + chime dobara trigger ho
+    try {
+      await updateDoc(doc(db, 'printRequests', order.id), {
+        printStatus: isOnline
+          ? 'WAITING_CONFIRMATION'
+          : 'WAITING_OPERATOR_CONFIRMATION',
+        ...(isOnline ? {} : { paymentStatus: 'PENDING' }),
+      });
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   /** Shared: cash milne par order print karo (modal ya queue se) */
   const confirmCash = async (order) => {
     if (!order) return;
+    const prevPayment = order.paymentStatus || 'PENDING';
     try {
       await updateDoc(doc(db, 'printRequests', order.id), {
         paymentStatus: 'PAID',
@@ -300,6 +342,14 @@ export default function Counter() {
     stopCashAlertLoop();
     stopTitleBlink();
     setManualOrder(null);
+    // Galti se confirm ho gaya? Undo se wapas cash pending (bina refresh)
+    showUndoToast(`#${order.token} print ho gaya — galti thi? Undo dabao`, () => {
+      seenRef.current.delete(order.id);
+      updateDoc(doc(db, 'printRequests', order.id), {
+        paymentStatus: prevPayment,
+        printStatus: 'WAITING_OPERATOR_CONFIRMATION',
+      }).catch((err) => console.error(err));
+    });
   };
 
   /** Cancelled/baaki pade order ko baad mein print karo (mistake recovery) */
@@ -314,14 +364,35 @@ export default function Counter() {
     } catch (err) {
       console.error(err);
     }
+    showUndoToast(`#${order.token} print ho gaya — Undo karne ke liye dabao`, () => {
+      seenRef.current.delete(order.id);
+      updateDoc(doc(db, 'printRequests', order.id), {
+        printStatus: 'CANCELLED',
+      }).catch((err) => console.error(err));
+    });
   };
 
   const handleConfirmManual = () => confirmCash(manualOrder);
 
   const handleLaterManual = () => {
+    const order = manualOrder;
     stopCashAlertLoop();
     stopTitleBlink();
     setManualOrder(null);
+    if (order) {
+      showUndoToast(
+        `#${order.token} pending list mein hai — kabhi bhi recover karo`,
+        () => {
+          // Undo: modal + alert turant wapas (bina refresh)
+          setManualOrder(order);
+          startCashAlertLoop();
+          startTitleBlink(
+            `Cash Order! ${formatINR(order.totalAmount)}`,
+            `Print System - ${order.token}`
+          );
+        }
+      );
+    }
   };
 
   const loadLedger = async () => {
@@ -497,6 +568,15 @@ export default function Counter() {
       r.printStatus === 'WAITING_OPERATOR_CONFIRMATION'
   ).length;
 
+  // Live pending cash list — Firestore listener se real-time update hota hai
+  const pendingCashOrders = requests.filter(
+    (r) => r.printStatus === 'WAITING_OPERATOR_CONFIRMATION'
+  );
+  const pendingCashTotal = pendingCashOrders.reduce(
+    (sum, r) => sum + (r.totalAmount || 0),
+    0
+  );
+
   return (
     <div className="counter-page">
       {/* Header */}
@@ -576,6 +656,32 @@ export default function Counter() {
             <span className="queue-badge">{queueCount} pending</span>
           </div>
 
+          {/* LIVE recovery bar — "Later" dabane par bhi order yahan se wapas aayega, refresh ki zaroorat nahi */}
+          {pendingCashOrders.length > 0 && (
+            <div className="pending-alert-bar" role="alert">
+              <span className="pending-alert-icon">⚠</span>
+              <span className="pending-alert-text">
+                <strong>
+                  {pendingCashOrders.length} cash order pending —{' '}
+                  {formatINR(pendingCashTotal)} collect karna hai
+                </strong>
+                <span className="pending-alert-tokens">
+                  {pendingCashOrders.slice(0, 3).map((r) => `#${r.token}`).join(', ')}
+                  {pendingCashOrders.length > 3
+                    ? ` +${pendingCashOrders.length - 3} more`
+                    : ''}
+                </span>
+              </span>
+              <button
+                type="button"
+                className="pending-alert-btn"
+                onClick={() => setManualOrder(pendingCashOrders[0])}
+              >
+                Recover Now
+              </button>
+            </div>
+          )}
+
           {loading && <p className="subtitle">Loading...</p>}
           {!loading && requests.length === 0 && (
             <div className="queue-empty">
@@ -622,9 +728,10 @@ export default function Counter() {
                     <span className="status-badge cash">Cash</span>
                   )}
                 </div>
-                {/* Mistake recovery: Later press ho gaya to yahan se confirm karo */}
+                {/* Mistake recovery: bina refresh turant sudharo */}
                 {(req.printStatus === 'WAITING_OPERATOR_CONFIRMATION' ||
-                  (req.printStatus === 'CANCELLED' && req.paymentMode === 'RAZORPAY')) && (
+                  (req.printStatus === 'CANCELLED' && req.paymentMode === 'RAZORPAY') ||
+                  req.printStatus === 'COMPLETED') && (
                   <div className="queue-item-actions">
                     {req.printStatus === 'WAITING_OPERATOR_CONFIRMATION' && (
                       <button
@@ -642,6 +749,16 @@ export default function Counter() {
                         onClick={() => reprintOrder(req)}
                       >
                         ↻ Print Now
+                      </button>
+                    )}
+                    {req.printStatus === 'COMPLETED' && (
+                      <button
+                        type="button"
+                        className="queue-action-btn revert"
+                        onClick={() => revertCompleted(req)}
+                        title="Galti se confirm/print ho gaya? Wapas pending karo"
+                      >
+                        ↩ Revoke
                       </button>
                     )}
                   </div>
@@ -939,6 +1056,27 @@ export default function Counter() {
             </div>
             <p className="control-upload-url">Upload URL: {window.location.origin}</p>
           </div>
+        </div>
+      )}
+
+      {/* Undo toast — galti turant sudharo (bina refresh) */}
+      {undoToast && (
+        <div className="undo-toast">
+          <span className="undo-toast-text">{undoToast.message}</span>
+          <button
+            type="button"
+            className="undo-toast-btn"
+            onClick={() => {
+              const fn = undoToast.undo;
+              hideUndoToast();
+              fn?.();
+            }}
+          >
+            ↩ Undo
+          </button>
+          <button type="button" className="toast-close" onClick={hideUndoToast}>
+            ×
+          </button>
         </div>
       )}
 
